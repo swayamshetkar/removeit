@@ -7,16 +7,22 @@ import asyncio
 import gc
 import threading
 from contextlib import asynccontextmanager
+import os
+import subprocess
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Global variables
 remove_bg_fn: Optional[Callable] = None
 model_loaded = False
 model_loading = False
 model_error = None
 model_download_progress = None
+
+# Path to your Git LFS model
+MODEL_PATH = "backend/models/u2net_human_seg.pth"
 
 def _lazy_import():
     global remove_bg_fn, model_loaded, model_loading, model_error, model_download_progress
@@ -24,23 +30,32 @@ def _lazy_import():
         model_loading = True
         model_download_progress = "Initializing lightweight model..."
         try:
+            # Ensure the model file exists
+            if not os.path.exists(MODEL_PATH):
+                model_download_progress = "Model file missing, running 'git lfs pull'..."
+                logger.info("Model file not found. Pulling from Git LFS...")
+                try:
+                    subprocess.run(["git", "lfs", "pull"], check=True)
+                except Exception as lfs_err:
+                    raise FileNotFoundError(f"Model file not found at {MODEL_PATH}. Failed to pull via Git LFS: {lfs_err}")
+
             logger.info("Loading U2NetP model via rembg...")
             model_download_progress = "Importing backend..."
             from backend.u2net_backend import remove_bg_bytes as _remove_bg_bytes, get_session
             remove_bg_fn = _remove_bg_bytes
 
-            # Warm up rembg session (triggers ONNX model download on first run)
+            # Warm up rembg session
             model_download_progress = "Warming up model session..."
             try:
                 get_session("u2netp")
             except Exception as warm_err:
-                # Not fatal; actual processing will retry
                 logger.warning(f"Warmup failed (will retry on first request): {warm_err}")
 
             model_loaded = True
             model_error = None
             model_download_progress = "Complete"
             logger.info("U2NetP model loaded successfully")
+
         except Exception as e:
             logger.error(f"Failed to load model: {e}")
             model_error = str(e)
@@ -57,7 +72,7 @@ async def lifespan(app: FastAPI):
     logger.info("Application shutdown")
 
 app = FastAPI(
-    title="Remove-IT (U2NetP)", 
+    title="Remove-IT (U2NetP)",
     version="1.0.0",
     description="Background removal API using lightweight U2NetP model",
     lifespan=lifespan
