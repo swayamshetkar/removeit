@@ -22,7 +22,7 @@ model_error = None
 model_download_progress = None
 
 # Path to your Git LFS model
-MODEL_PATH = "backend/models/u2net_human_seg.pth"
+MODEL_PATH = "u2net_human_seg.pth"
 
 def _lazy_import():
     global remove_bg_fn, model_loaded, model_loading, model_error, model_download_progress
